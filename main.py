@@ -44,7 +44,7 @@ def get_attendance():
         return pd.DataFrame(columns=["student_id", "fecha", "status"])
 
 # --- App principal ---
-st.title("📋 Sistema de Asistencia QR - Escuela Agraria Quilmes")
+st.title("📋 Sistema de Asistencia QR -  ASLE")
 
 menu = st.sidebar.selectbox(
     "Menú",
@@ -113,14 +113,27 @@ elif menu == "Generar QR":
     link = "https://darobarbaroja-asistencia-qr-streamlit.streamlit.app/"
     st.write("QR generado automáticamente para esta app:")
 
-    # Generar QR
-    qr = qrcode.make(link)
-    qr_img = qr.get_image()
-    st.image(qr_img, caption="Escaneá para acceder a la app", use_container_width=True)
+    # Generar QR con tamaño ajustado
+    import qrcode
+    from PIL import Image
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=6,   # 🔹 valor menor = QR más chico (por defecto suele ser 10)
+        border=2,
+    )
+    qr.add_data(link)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # Mostrar QR más compacto
+    st.image(img, caption="Escaneá para acceder a la app", width=250)
 
     # Mostrar también el enlace por si alguien quiere copiarlo
     st.write("🔗 Enlace directo:")
     st.code(link, language="text")
+
 
 
 # --- Ver asistencia completa ---
