@@ -49,43 +49,45 @@ st.title("📋 Sistema de Asistencia con QR (sin base de datos)")
 
 menu = st.sidebar.selectbox("Menú", ["Generar QR", "Marcar asistencia", "Ver registro"])
 
-if menu == "Generar QR":
-    st.subheader("📱 Códigos QR de los estudiantes")
-    students = get_students()
-    for _, row in students.iterrows():
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            qr_img = generar_qr(str(row["id"]))
-            st.image(qr_img, width=90)
-        with col2:
-            st.markdown(f"**{row['nombre']} {row['apellido']}**")
-            st.markdown(f"Color: `{row['avatar_color']}`")
-    st.info("Podés guardar o imprimir estos QR para los alumnos.")
+elif menu == "Generar QR":
+    st.subheader("📱 Código QR general de asistencia")
+
+    # URL de tu app en Streamlit Cloud
+    app_url = "https://asistenciaqr.streamlit.app/"  # Cambialo por tu URL real
+
+    qr_img = qrcode.make(app_url)
+    buf = BytesIO()
+    qr_img.save(buf, format="PNG")
+    st.image(buf.getvalue(), width=250)
+
+    st.markdown("### Escaneá este QR para registrar asistencia")
+    st.code(app_url, language="text")
+    st.info("Podés imprimirlo o proyectarlo en clase. Todos los alumnos lo usarán.")
 
 elif menu == "Marcar asistencia":
-    st.subheader("🧍 Marcar asistencia manual o por ID QR")
-    students = get_students()
-    student_id = st.text_input("Ingresá ID del alumno (del QR):")
+    st.subheader("🧍 Marcar asistencia desde el QR general")
 
-    if student_id:
-        try:
-            student_id = int(student_id)
-            alumno = students.loc[students["id"] == student_id]
-            if not alumno.empty:
-                nombre = alumno.iloc[0]["nombre"]
-                marcar_presente(student_id)
-                st.success(f"✅ Asistencia registrada para {nombre}")
-            else:
-                st.error("❌ ID no encontrado en la lista de estudiantes.")
-        except ValueError:
-            st.error("El ID debe ser un número.")
+    students = get_students()
+    nombre = st.selectbox("Seleccioná tu nombre", students["nombre"])
+
+    if st.button("Marcar Presente"):
+        student_id = int(students.loc[students["nombre"] == nombre, "id"].values[0])
+        marcar_presente(student_id)
+        st.success(f"✅ Asistencia registrada para {nombre}")
 
     st.markdown("---")
-    st.markdown("### Lista de alumnos")
-    for _, row in students.iterrows():
-        if st.button(f"Marcar Presente: {row['nombre']} {row['apellido']}"):
-            marcar_presente(row["id"])
-            st.success(f"Asistencia registrada para {row['nombre']}")
+    st.markdown("### Lista de alumnos presentes hoy")
+
+    df = get_attendance()
+    hoy = str(date.today())
+    presentes = df[df["fecha"] == hoy]
+    if presentes.empty:
+        st.info("Aún no hay alumnos registrados hoy.")
+    else:
+        presentes = presentes.merge(students, left_on="student_id", right_on="id", how="left")
+        st.dataframe(presentes[["nombre", "apellido", "fecha", "status"]])
+
+
 
 elif menu == "Ver registro":
     st.subheader("📅 Registro de asistencias")
