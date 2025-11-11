@@ -1,79 +1,97 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
 import qrcode
+from datetime import date
 from io import BytesIO
-import os
 
-# ---------- CONFIGURACIÓN ----------
-st.set_page_config(page_title="Asistencia QR", page_icon="📋", layout="centered")
+# --- Archivos CSV ---
+STUDENTS_CSV = "students.csv"
+ATTENDANCE_CSV = "attendance.csv"
 
-STUDENTS_FILE = "data/students.csv"
-ATTENDANCE_FILE = "data/attendance.csv"
-
-# Crear archivos si no existen
-if not os.path.exists("data"):
-    os.makedirs("data")
-if not os.path.exists(STUDENTS_FILE):
-    st.error("⚠️ No se encontró 'students.csv'. Creá el archivo dentro de la carpeta /data")
-if not os.path.exists(ATTENDANCE_FILE):
-    with open(ATTENDANCE_FILE, "w") as f:
-        f.write("student_id,fecha,status\n")
-
-# ---------- FUNCIONES ----------
+# --- Cargar alumnos ---
 def get_students():
-    return pd.read_csv(STUDENTS_FILE)
+    try:
+        return pd.read_csv(STUDENTS_CSV)
+    except FileNotFoundError:
+        df = pd.DataFrame(columns=["id", "nombre", "apellido"])
+        df.to_csv(STUDENTS_CSV, index=False)
+        return df
 
-def get_attendance():
-    return pd.read_csv(ATTENDANCE_FILE)
+# --- Guardar alumnos ---
+def save_students(df):
+    df.to_csv(STUDENTS_CSV, index=False)
 
+# --- Registrar asistencia ---
 def marcar_presente(student_id):
-    df = get_attendance()
+    try:
+        df = pd.read_csv(ATTENDANCE_CSV)
+    except FileNotFoundError:
+        df = pd.DataFrame(columns=["student_id", "fecha", "status"])
+
     hoy = str(date.today())
-    existe = ((df["student_id"] == student_id) & (df["fecha"] == hoy)).any()
+    presente = {"student_id": student_id, "fecha": hoy, "status": "Presente"}
 
-    if not existe:
-        nuevo = pd.DataFrame([[student_id, hoy, "P"]], columns=df.columns)
-        df = pd.concat([df, nuevo], ignore_index=True)
-        df.to_csv(ATTENDANCE_FILE, index=False)
-    return df
+    # Evita duplicar asistencia el mismo día
+    if not ((df["student_id"] == student_id) & (df["fecha"] == hoy)).any():
+        df = pd.concat([df, pd.DataFrame([presente])], ignore_index=True)
+        df.to_csv(ATTENDANCE_CSV, index=False)
 
-def generar_qr(data):
-    qr = qrcode.make(data)
-    buf = BytesIO()
-    qr.save(buf, format="PNG")
-    return buf.getvalue()
+# --- Obtener registros ---
+def get_attendance():
+    try:
+        return pd.read_csv(ATTENDANCE_CSV)
+    except FileNotFoundError:
+        return pd.DataFrame(columns=["student_id", "fecha", "status"])
 
-# ---------- INTERFAZ ----------
-st.title("📋 Sistema de Asistencia con QR (sin base de datos)")
+# --- App principal ---
+st.title("📋 Sistema de Asistencia QR - Escuela Agraria Quilmes")
 
-menu = st.sidebar.selectbox("Menú", ["Generar QR", "Marcar asistencia", "Ver registro"])
+menu = st.sidebar.selectbox(
+    "Menú",
+    ["Inicio", "Registrar alumno", "Marcar asistencia", "Generar QR", "Ver asistencia"]
+)
 
-elif menu == "Generar QR":
-    st.subheader("📱 Código QR general de asistencia")
+# --- Inicio ---
+if menu == "Inicio":
+    st.write("""
+    Bienvenido al sistema de asistencia.
+    Los alumnos pueden escanear un **único código QR general**
+    que los redirige a esta página para marcar su asistencia.
+    """)
 
-    # URL de tu app en Streamlit Cloud
-    app_url = "https://asistenciaqr.streamlit.app/"  # Cambialo por tu URL real
+# --- Registrar alumno ---
+elif menu == "Registrar alumno":
+    st.subheader("➕ Registrar nuevo alumno")
+    nombre = st.text_input("Nombre")
+    apellido = st.text_input("Apellido")
 
-    qr_img = qrcode.make(app_url)
-    buf = BytesIO()
-    qr_img.save(buf, format="PNG")
-    st.image(buf.getvalue(), width=250)
+    if st.button("Guardar alumno"):
+        if nombre and apellido:
+            df = get_students()
+            nuevo_id = len(df) + 1
+            nuevo = pd.DataFrame([[nuevo_id, nombre, apellido]], columns=["id", "nombre", "apellido"])
+            df = pd.concat([df, nuevo], ignore_index=True)
+            save_students(df)
+            st.success(f"Alumno {nombre} {apellido} agregado con ID {nuevo_id}")
+        else:
+            st.warning("Completa todos los campos.")
 
-    st.markdown("### Escaneá este QR para registrar asistencia")
-    st.code(app_url, language="text")
-    st.info("Podés imprimirlo o proyectarlo en clase. Todos los alumnos lo usarán.")
+    st.markdown("---")
+    st.dataframe(get_students())
 
+# --- Marcar asistencia ---
 elif menu == "Marcar asistencia":
     st.subheader("🧍 Marcar asistencia desde el QR general")
 
     students = get_students()
-    nombre = st.selectbox("Seleccioná tu nombre", students["nombre"])
-
-    if st.button("Marcar Presente"):
-        student_id = int(students.loc[students["nombre"] == nombre, "id"].values[0])
-        marcar_presente(student_id)
-        st.success(f"✅ Asistencia registrada para {nombre}")
+    if students.empty:
+        st.warning("No hay alumnos registrados.")
+    else:
+        nombre = st.selectbox("Seleccioná tu nombre", students["nombre"])
+        if st.button("Marcar Presente"):
+            student_id = int(students.loc[students["nombre"] == nombre, "id"].values[0])
+            marcar_presente(student_id)
+            st.success(f"✅ Asistencia registrada para {nombre}")
 
     st.markdown("---")
     st.markdown("### Lista de alumnos presentes hoy")
@@ -87,21 +105,25 @@ elif menu == "Marcar asistencia":
         presentes = presentes.merge(students, left_on="student_id", right_on="id", how="left")
         st.dataframe(presentes[["nombre", "apellido", "fecha", "status"]])
 
+# --- Generar QR ---
+elif menu == "Generar QR":
+    st.subheader("🔲 Generar QR General del Sistema")
 
+    link = st.text_input("🔗 Ingresá el enlace de la app (ejemplo: https://asistenciaqr.streamlit.app)")
+    if link:
+        qr = qrcode.make(link)
+        buffer = BytesIO()
+        qr.save(buffer, format="PNG")
+        st.image(buffer.getvalue(), caption="Escaneá este QR para marcar asistencia", width=250)
 
-elif menu == "Ver registro":
-    st.subheader("📅 Registro de asistencias")
+# --- Ver asistencia completa ---
+elif menu == "Ver asistencia":
+    st.subheader("📅 Registro completo de asistencias")
     df = get_attendance()
+    students = get_students()
+
     if df.empty:
-        st.info("Aún no hay asistencias registradas.")
+        st.info("No hay registros de asistencia aún.")
     else:
-        students = get_students()
         df = df.merge(students, left_on="student_id", right_on="id", how="left")
-        df = df[["fecha", "nombre", "apellido", "status"]]
-        st.dataframe(df.sort_values(by="fecha", ascending=False), use_container_width=True)
-        st.download_button(
-            "📥 Descargar CSV",
-            data=df.to_csv(index=False).encode("utf-8"),
-            file_name=f"asistencias_{date.today()}.csv",
-            mime="text/csv"
-        )
+        st.dataframe(df[["fecha", "nombre", "apellido", "status"]])
