@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Asistencia del día</title>
+<style>
+table { border-collapse: collapse; width: 60%; margin: auto; }
+th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+th { background: #3b82f6; color: white; }
+tr:nth-child(even) { background: #f3f4f6; }
+</style>
+</head>
+<body>
+
+<h2 style="text-align:center;">🗓️ Asistencia del {{ fecha }}</h2>
+<table>
+<tr><th>Nombre</th><th>Apellido</th><th>Estado</th></tr>
+{% for r in registros %}
+<tr>
+  <td>{{r.nombre}}</td>
+  <td>{{r.apellido}}</td>
+  <td>{% if r.status == 'P' %}✅ Presente{% else %}❌ Ausente{% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+
+</body>
+</html>
