@@ -2,3 +2,7 @@ streamlit
 mysql-connector-python
 qrcode
 pillow
+
+pandas
+
+
