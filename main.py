@@ -1,101 +1,105 @@
 import streamlit as st
-import mysql.connector
-import qrcode
+import pandas as pd
 from datetime import date
+import qrcode
+from io import BytesIO
 import os
 
-# ---------------------------
-# Conexión a la base de datos
-# ---------------------------
-def get_db_connection():
-    return mysql.connector.connect(
-        host="localhost",    # En Streamlit Cloud será remoto (ver abajo)
-        user="root",
-        password="",
-        database="asistencia_qr"
-    )
+# ---------- CONFIGURACIÓN ----------
+st.set_page_config(page_title="Asistencia QR", page_icon="📋", layout="centered")
 
-# ---------------------------
-# Generar QR si no existe
-# ---------------------------
-def generar_qr(id_estudiante):
-    os.makedirs("qrs", exist_ok=True)
-    qr_path = f"qrs/{id_estudiante}.png"
-    url = f"https://asistenciaqr.streamlit.app/?scan={id_estudiante}"
-    if not os.path.exists(qr_path):
-        img = qrcode.make(url)
-        img.save(qr_path)
-    return qr_path
+STUDENTS_FILE = "data/students.csv"
+ATTENDANCE_FILE = "data/attendance.csv"
 
-# ---------------------------
-# Registrar asistencia
-# ---------------------------
-def registrar_asistencia(student_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    today = date.today()
-    sql = """
-    INSERT INTO attendance (student_id, fecha, status)
-    VALUES (%s, %s, 'P')
-    ON DUPLICATE KEY UPDATE status='P'
-    """
-    cur.execute(sql, (student_id, today))
-    conn.commit()
-    conn.close()
+# Crear archivos si no existen
+if not os.path.exists("data"):
+    os.makedirs("data")
+if not os.path.exists(STUDENTS_FILE):
+    st.error("⚠️ No se encontró 'students.csv'. Creá el archivo dentro de la carpeta /data")
+if not os.path.exists(ATTENDANCE_FILE):
+    with open(ATTENDANCE_FILE, "w") as f:
+        f.write("student_id,fecha,status\n")
 
-# ---------------------------
-# Mostrar estudiantes y QR
-# ---------------------------
-def mostrar_qr():
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT * FROM students")
-    students = cur.fetchall()
-    conn.close()
+# ---------- FUNCIONES ----------
+def get_students():
+    return pd.read_csv(STUDENTS_FILE)
 
-    st.header("📋 Lista de estudiantes (con QR)")
-    cols = st.columns(3)
-    for i, s in enumerate(students):
-        with cols[i % 3]:
-            qr_path = generar_qr(s["id"])
-            st.image(qr_path, width=120)
-            st.markdown(f"**{s['nombre']} {s['apellido']}**")
+def get_attendance():
+    return pd.read_csv(ATTENDANCE_FILE)
 
-# ---------------------------
-# Mostrar asistencia diaria
-# ---------------------------
-def ver_asistencias():
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
-    today = date.today()
-    cur.execute("""
-        SELECT s.nombre, s.apellido, a.status
-        FROM students s
-        LEFT JOIN attendance a ON s.id = a.student_id AND a.fecha = %s
-    """, (today,))
-    registros = cur.fetchall()
-    conn.close()
+def marcar_presente(student_id):
+    df = get_attendance()
+    hoy = str(date.today())
+    existe = ((df["student_id"] == student_id) & (df["fecha"] == hoy)).any()
 
-    st.header(f"🗓️ Asistencia del {today}")
-    st.table(registros)
+    if not existe:
+        nuevo = pd.DataFrame([[student_id, hoy, "P"]], columns=df.columns)
+        df = pd.concat([df, nuevo], ignore_index=True)
+        df.to_csv(ATTENDANCE_FILE, index=False)
+    return df
 
-# ---------------------------
-# INTERFAZ STREAMLIT
-# ---------------------------
-st.set_page_config(page_title="Asistencia QR", page_icon="📱")
+def generar_qr(data):
+    qr = qrcode.make(data)
+    buf = BytesIO()
+    qr.save(buf, format="PNG")
+    return buf.getvalue()
 
-menu = st.sidebar.radio("Menú", ["Generar QR", "Ver Asistencia", "Escanear QR"])
+# ---------- INTERFAZ ----------
+st.title("📋 Sistema de Asistencia con QR (sin base de datos)")
+
+menu = st.sidebar.selectbox("Menú", ["Generar QR", "Marcar asistencia", "Ver registro"])
 
 if menu == "Generar QR":
-    mostrar_qr()
+    st.subheader("📱 Códigos QR de los estudiantes")
+    students = get_students()
+    for _, row in students.iterrows():
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            qr_img = generar_qr(str(row["id"]))
+            st.image(qr_img, width=90)
+        with col2:
+            st.markdown(f"**{row['nombre']} {row['apellido']}**")
+            st.markdown(f"Color: `{row['avatar_color']}`")
+    st.info("Podés guardar o imprimir estos QR para los alumnos.")
 
-elif menu == "Ver Asistencia":
-    ver_asistencias()
+elif menu == "Marcar asistencia":
+    st.subheader("🧍 Marcar asistencia manual o por ID QR")
+    students = get_students()
+    student_id = st.text_input("Ingresá ID del alumno (del QR):")
 
-elif menu == "Escanear QR":
-    student_id = st.query_params.get("scan", [None])[0]
     if student_id:
-        registrar_asistencia(student_id)
-        st.success(f"✅ Asistencia registrada para ID {student_id}")
+        try:
+            student_id = int(student_id)
+            alumno = students.loc[students["id"] == student_id]
+            if not alumno.empty:
+                nombre = alumno.iloc[0]["nombre"]
+                marcar_presente(student_id)
+                st.success(f"✅ Asistencia registrada para {nombre}")
+            else:
+                st.error("❌ ID no encontrado en la lista de estudiantes.")
+        except ValueError:
+            st.error("El ID debe ser un número.")
+
+    st.markdown("---")
+    st.markdown("### Lista de alumnos")
+    for _, row in students.iterrows():
+        if st.button(f"Marcar Presente: {row['nombre']} {row['apellido']}"):
+            marcar_presente(row["id"])
+            st.success(f"Asistencia registrada para {row['nombre']}")
+
+elif menu == "Ver registro":
+    st.subheader("📅 Registro de asistencias")
+    df = get_attendance()
+    if df.empty:
+        st.info("Aún no hay asistencias registradas.")
     else:
-        st.info("Escanee un código QR generado por el sistema.")
+        students = get_students()
+        df = df.merge(students, left_on="student_id", right_on="id", how="left")
+        df = df[["fecha", "nombre", "apellido", "status"]]
+        st.dataframe(df.sort_values(by="fecha", ascending=False), use_container_width=True)
+        st.download_button(
+            "📥 Descargar CSV",
+            data=df.to_csv(index=False).encode("utf-8"),
+            file_name=f"asistencias_{date.today()}.csv",
+            mime="text/csv"
+        )
