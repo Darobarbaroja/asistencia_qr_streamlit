@@ -107,14 +107,21 @@ elif menu == "Marcar asistencia":
 
 # --- Generar QR ---
 elif menu == "Generar QR":
-    st.subheader("🔲 Generar QR General del Sistema")
+    st.subheader("📱 Generar código QR de acceso a la app")
 
-    link = st.text_input("🔗 Ingresá el enlace de la app (ejemplo: https://asistenciaqr.streamlit.app)")
-    if link:
-        qr = qrcode.make(link)
-        buffer = BytesIO()
-        qr.save(buffer, format="PNG")
-        st.image(buffer.getvalue(), caption="Escaneá este QR para marcar asistencia", width=250)
+    # Enlace público fijo de tu app en Streamlit
+    link = "https://darobarbaroja-asistencia-qr-streamlit.streamlit.app/"
+    st.write("QR generado automáticamente para esta app:")
+
+    # Generar QR
+    qr = qrcode.make(link)
+    qr_img = qr.get_image()
+    st.image(qr_img, caption="Escaneá para acceder a la app", use_container_width=True)
+
+    # Mostrar también el enlace por si alguien quiere copiarlo
+    st.write("🔗 Enlace directo:")
+    st.code(link, language="text")
+
 
 # --- Ver asistencia completa ---
 elif menu == "Ver asistencia":
