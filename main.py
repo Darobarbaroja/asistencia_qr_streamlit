@@ -113,26 +113,30 @@ elif menu == "Generar QR":
     link = "https://darobarbaroja-asistencia-qr-streamlit.streamlit.app/"
     st.write("QR generado automáticamente para esta app:")
 
-    # Generar QR con tamaño ajustado
     import qrcode
     from PIL import Image
+    import io
 
+    # Crear QR más chico
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=6,   # 🔹 valor menor = QR más chico (por defecto suele ser 10)
+        box_size=6,   # 🔹 Ajusta tamaño del código QR
         border=2,
     )
     qr.add_data(link)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
 
-    # Mostrar QR más compacto
-    st.image(img, caption="Escaneá para acceder a la app", width=250)
+    # Convertir la imagen a formato que Streamlit puede mostrar
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    st.image(buf.getvalue(), caption="Escaneá para acceder a la app", width=250)
 
     # Mostrar también el enlace por si alguien quiere copiarlo
     st.write("🔗 Enlace directo:")
     st.code(link, language="text")
+
 
 
 
